@@ -925,7 +925,6 @@ func createClaimHandler(w http.ResponseWriter, r *http.Request) {
     })
 }
 
-func main() {
 	
 func main() {
     dbHost := os.Getenv("DB_HOST")
