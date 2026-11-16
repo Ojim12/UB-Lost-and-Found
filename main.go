@@ -972,6 +972,10 @@ http.HandleFunc("/api/reports", reportsHandler)
 
 	http.Handle("/", http.FileServer(http.Dir("public")))
 
-	log.Println("Website running at http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+port := os.Getenv("PORT")
+if port == "" {
+    port = "8080"
 }
+
+log.Println("Website running on port " + port)
+log.Fatal(http.ListenAndServe(":"+port, nil))
