@@ -979,3 +979,4 @@ if port == "" {
 
 log.Println("Website running on port " + port)
 log.Fatal(http.ListenAndServe(":"+port, nil))
+}
