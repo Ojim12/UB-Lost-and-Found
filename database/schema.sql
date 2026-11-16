@@ -1,6 +1,6 @@
 -- UB Lost and Found | CMPS2111 Phase 3 | MySQL 8.0.16+ (not yet run; test in your own environment)
-CREATE DATABASE IF NOT EXISTS ub_lost_found CHARACTER SET utf8mb4;
-USE ub_lost_found;
+CREATE DATABASE IF NOT EXISTS ublostnfound CHARACTER SET utf8mb4;
+USE ublostnfound;
 
 CREATE TABLE staff (
   staff_id CHAR(36) NOT NULL DEFAULT (UUID()),
@@ -55,16 +55,6 @@ CREATE TABLE item (
   CONSTRAINT fk_item_staff FOREIGN KEY (logged_by_staff_id) REFERENCES staff (staff_id)
 ) ENGINE=InnoDB;
 
--- MySQL cannot use CURDATE() inside CHECK, so the no-future-date rule is a trigger
-DELIMITER $$
-CREATE TRIGGER trg_item_date_found BEFORE INSERT ON item
-FOR EACH ROW
-BEGIN
-  IF NEW.date_found > CURDATE() THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'date_found cannot be in the future';
-  END IF;
-END$$
-DELIMITER ;
 
 CREATE TABLE claimant (
   claimant_id CHAR(36) NOT NULL DEFAULT (UUID()),
