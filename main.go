@@ -926,32 +926,48 @@ func createClaimHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	dbUser := os.Getenv("DB_USER")
-	dbPassword := os.Getenv("DB_PASSWORD")
+	
+func main() {
+    dbHost := os.Getenv("DB_HOST")
+    dbPort := os.Getenv("DB_PORT")
+    dbName := os.Getenv("DB_NAME")
+    dbUser := os.Getenv("DB_USER")
+    dbPassword := os.Getenv("DB_PASSWORD")
 
-	if dbUser == "" || dbPassword == "" {
-		log.Fatal("Please set DB_USER and DB_PASSWORD before starting the server.")
-	}
+    if dbHost == "" || dbUser == "" || dbPassword == "" {
+        log.Fatal("Please set DB_HOST, DB_USER and DB_PASSWORD.")
+    }
 
-	dsn := fmt.Sprintf(
-		"%s:%s@tcp(127.0.0.1:3306)/ub_lost_found?parseTime=true",
-		dbUser,
-		dbPassword,
-	)
+    if dbPort == "" {
+        dbPort = "4000"
+    }
 
-	var err error
+    if dbName == "" {
+        dbName = "ub_lost_found"
+    }
 
-	db, err = sql.Open("mysql", dsn)
-	if err != nil {
-		log.Fatal("Could not open database:", err)
-	}
-	defer db.Close()
+    dsn := fmt.Sprintf(
+        "%s:%s@tcp(%s:%s)/%s?parseTime=true&tls=true",
+        dbUser,
+        dbPassword,
+        dbHost,
+        dbPort,
+        dbName,
+    )
 
-	if err := db.Ping(); err != nil {
-		log.Fatal("Could not connect to MySQL:", err)
-	}
+    var err error
 
-	log.Println("Connected to the UB Lost and Found database!")
+    db, err = sql.Open("mysql", dsn)
+    if err != nil {
+        log.Fatal("Could not open database:", err)
+    }
+
+    if err := db.Ping(); err != nil {
+        log.Fatal("Could not connect to MySQL:", err)
+    }
+
+    log.Println("Connected to the UB Lost and Found database!")
+
 
 	
 	http.HandleFunc("/api/login", loginHandler)
