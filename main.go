@@ -6,9 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/resend/resend-go/v4"
 	"log"
 	"net/http"
-	"net/smtp"
 	"os"
 	"strings"
 	"sync"
@@ -965,22 +965,19 @@ func sendClaimDecisionEmail(
 	decision string,
 	notes string,
 ) error {
-	host := os.Getenv("SMTP_HOST")
-	port := os.Getenv("SMTP_PORT")
-	username := os.Getenv("SMTP_USERNAME")
-	password := os.Getenv("SMTP_PASSWORD")
+	apiKey := os.Getenv("RESEND_API_KEY")
 
-	from := os.Getenv("SMTP_FROM")
+	if apiKey == "" {
+		return fmt.Errorf("RESEND_API_KEY is not configured")
+	}
+
+	from := os.Getenv("RESEND_FROM")
+
 	if from == "" {
-		from = username
+		from = "UB Lost & Found <onboarding@resend.dev>"
 	}
 
-	if host == "" || port == "" ||
-		username == "" || password == "" {
-		return fmt.Errorf("SMTP configuration is incomplete")
-	}
-
-	subject := "UB Lost & Found Claim Update"
+	client := resend.NewClient(apiKey)
 
 	messageBody := fmt.Sprintf(
 		"Hello %s,\n\n"+
@@ -993,29 +990,16 @@ func sendClaimDecisionEmail(
 		notes,
 	)
 
-	message := []byte(
-		"From: " + from + "\r\n" +
-			"To: " + recipient + "\r\n" +
-			"Subject: " + subject + "\r\n" +
-			"MIME-Version: 1.0\r\n" +
-			"Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
-			messageBody,
-	)
+	params := &resend.SendEmailRequest{
+		From:    from,
+		To:      []string{recipient},
+		Subject: "UB Lost & Found Claim Update",
+		Text:    messageBody,
+	}
 
-	auth := smtp.PlainAuth(
-		"",
-		username,
-		password,
-		host,
-	)
+	_, err := client.Emails.Send(params)
 
-	return smtp.SendMail(
-		host+":"+port,
-		auth,
-		from,
-		[]string{recipient},
-		message,
-	)
+	return err
 }
 
 func main() {
