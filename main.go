@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 	"strings"
+	"net/smtp"
 
 	_ "github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
@@ -695,6 +696,27 @@ func claimDecisionHandler(w http.ResponseWriter, r *http.Request) {
         })
         return
     }
+	var claimantEmail, claimantName, itemDescription string
+
+err = tx.QueryRow(`
+    SELECT cl.claimant_email, cl.claimant_name, i.description
+    FROM claim c
+    JOIN claimant cl ON cl.claimant_id = c.claimant_id
+    JOIN item i ON i.item_id = c.item_id
+    WHERE c.claim_id = ?
+`, input.ClaimID).Scan(
+    &claimantEmail,
+    &claimantName,
+    &itemDescription,
+)
+
+if err != nil {
+    log.Println("Could not retrieve claimant email:", err)
+    sendJSON(w, http.StatusInternalServerError, map[string]string{
+        "error": "Could not retrieve claimant information.",
+    })
+    return
+}
 
     if currentStatus != "Pending" {
         sendJSON(w, http.StatusConflict, map[string]string{
@@ -754,6 +776,15 @@ func claimDecisionHandler(w http.ResponseWriter, r *http.Request) {
         })
         return
     }
+	if err := sendClaimDecisionEmail(
+    claimantEmail,
+    claimantName,
+    itemDescription,
+    input.Decision,
+    input.Notes,
+); err != nil {
+    log.Println("Claim decision saved, but email notification failed:", err)
+}
 
     sendJSON(w, http.StatusOK, map[string]string{
         "message": "Claim decision saved successfully.",
@@ -927,6 +958,60 @@ func createClaimHandler(w http.ResponseWriter, r *http.Request) {
     sendJSON(w, http.StatusCreated, map[string]string{
         "message": "Your claim has been submitted successfully and is pending staff verification.",
     })
+}
+func sendClaimDecisionEmail(
+    recipient string,
+    claimantName string,
+    itemDescription string,
+    decision string,
+    notes string,
+) error {
+    host := os.Getenv("SMTP_HOST")
+    port := os.Getenv("SMTP_PORT")
+    username := os.Getenv("SMTP_USERNAME")
+    password := os.Getenv("SMTP_PASSWORD")
+
+    if host == "" || port == "" ||
+        username == "" || password == "" {
+        return fmt.Errorf("SMTP configuration is incomplete")
+    }
+
+    subject := "UB Lost & Found Claim Update"
+
+    messageBody := fmt.Sprintf(
+        "Hello %s,\n\n"+
+            "Your claim for '%s' has been %s.\n\n"+
+            "Staff verification notes: %s\n\n"+
+            "Thank you,\nUniversity of Belize Lost & Found",
+        claimantName,
+        itemDescription,
+        decision,
+        notes,
+    )
+
+    message := []byte(
+        "From: " + username + "\r\n" +
+            "To: " + recipient + "\r\n" +
+            "Subject: " + subject + "\r\n" +
+            "MIME-Version: 1.0\r\n" +
+            "Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
+            messageBody,
+    )
+
+    auth := smtp.PlainAuth(
+        "",
+        username,
+        password,
+        host,
+    )
+
+    return smtp.SendMail(
+        host+":"+port,
+        auth,
+        username,
+        []string{recipient},
+        message,
+    )
 }
 
 	
