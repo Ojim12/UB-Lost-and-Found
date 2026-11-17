@@ -261,6 +261,7 @@ func createItemHandler(w http.ResponseWriter, r *http.Request) {
 		Location    string `json:"location"`
 		DateFound   string `json:"dateFound"`
 		FinderInfo  string `json:"finderInfo"`
+		Email string `json:"email"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -274,6 +275,7 @@ func createItemHandler(w http.ResponseWriter, r *http.Request) {
 	input.Category = strings.TrimSpace(input.Category)
 	input.Location = strings.TrimSpace(input.Location)
 	input.FinderInfo = strings.TrimSpace(input.FinderInfo)
+	input.Email = strings.TrimSpace(input.Email)
 
 	if len([]rune(input.Description)) < 10 ||
 		len([]rune(input.Description)) > 500 ||
@@ -796,6 +798,7 @@ func createClaimHandler(w http.ResponseWriter, r *http.Request) {
         (input.Type != "Student" && input.Type != "Faculty" && input.Type != "Staff") ||
         len(input.UBID) > 10 ||
         input.Contact == "" || len([]rune(input.Contact)) > 100 ||
+		input.Email == "" || len([]rune(input.Email)) > 100 ||
         input.Proof == "" || len([]rune(input.Proof)) > 500 {
 
         sendJSON(w, http.StatusBadRequest, map[string]string{
