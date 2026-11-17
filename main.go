@@ -862,16 +862,17 @@ func createClaimHandler(w http.ResponseWriter, r *http.Request) {
         ubID = input.UBID
     }
 
-    _, err = tx.Exec(`
-        INSERT INTO claimant (
-            claimant_id,
-            claimant_name,
-            claimant_type,
-            ub_id_number,
-            contact_info
-        )
-        VALUES (?, ?, ?, ?, ?)
-    `, claimantID, input.Name, input.Type, ubID, input.Contact)
+  _, err = tx.Exec(`
+    INSERT INTO claimant (
+        claimant_id,
+        claimant_name,
+        claimant_email,
+        claimant_type,
+        ub_id_number,
+        contact_info
+    )
+    VALUES (?, ?, ?, ?, ?, ?)
+`, claimantID, input.Name, input.Email, input.Type, ubID, input.Contact)
 
     if err != nil {
         log.Println("Claimant insert error:", err)
