@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/smtp"
 	"os"
+	"strings"
 	"sync"
 	"time"
-	"strings"
-	"net/smtp"
 
 	_ "github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
@@ -30,12 +30,12 @@ type Item struct {
 	Photo       string `json:"photo"`
 }
 type Claim struct {
-    ID       string `json:"id"`
-    Item     string `json:"item"`
-    Person   string `json:"person"`
-    Proof    string `json:"proof"`
-    Status   string `json:"status"`
-    ClaimDate string `json:"claimDate"`
+	ID        string `json:"id"`
+	Item      string `json:"item"`
+	Person    string `json:"person"`
+	Proof     string `json:"proof"`
+	Status    string `json:"status"`
+	ClaimDate string `json:"claimDate"`
 }
 
 type StaffSession struct {
@@ -262,7 +262,6 @@ func createItemHandler(w http.ResponseWriter, r *http.Request) {
 		Location    string `json:"location"`
 		DateFound   string `json:"dateFound"`
 		FinderInfo  string `json:"finderInfo"`
-		Email string `json:"email"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -276,7 +275,6 @@ func createItemHandler(w http.ResponseWriter, r *http.Request) {
 	input.Category = strings.TrimSpace(input.Category)
 	input.Location = strings.TrimSpace(input.Location)
 	input.FinderInfo = strings.TrimSpace(input.FinderInfo)
-	input.Email = strings.TrimSpace(input.Email)
 
 	if len([]rune(input.Description)) < 10 ||
 		len([]rune(input.Description)) > 500 ||
@@ -357,7 +355,6 @@ func createItemHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 // GET /api/items
 func itemsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -432,39 +429,39 @@ func itemsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func reportsHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
-        sendJSON(w, http.StatusMethodNotAllowed, map[string]string{
-            "error": "Method not allowed.",
-        })
-        return
-    }
+	if r.Method != http.MethodGet {
+		sendJSON(w, http.StatusMethodNotAllowed, map[string]string{
+			"error": "Method not allowed.",
+		})
+		return
+	}
 
-    _, authenticated := getSession(r)
-    if !authenticated {
-        sendJSON(w, http.StatusUnauthorized, map[string]string{
-            "error": "Please log in as staff first.",
-        })
-        return
-    }
+	_, authenticated := getSession(r)
+	if !authenticated {
+		sendJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "Please log in as staff first.",
+		})
+		return
+	}
 
-    var total, claimed, pending, approved, rejected int
+	var total, claimed, pending, approved, rejected int
 
-    err := db.QueryRow(`
+	err := db.QueryRow(`
         SELECT
             COUNT(*),
             COALESCE(SUM(status = 'Claimed'), 0)
         FROM item
     `).Scan(&total, &claimed)
 
-    if err != nil {
-        log.Println("Report item query error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not retrieve inventory statistics.",
-        })
-        return
-    }
+	if err != nil {
+		log.Println("Report item query error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not retrieve inventory statistics.",
+		})
+		return
+	}
 
-    err = db.QueryRow(`
+	err = db.QueryRow(`
         SELECT
             COALESCE(SUM(claim_status = 'Pending'), 0),
             COALESCE(SUM(claim_status = 'Approved'), 0),
@@ -472,22 +469,22 @@ func reportsHandler(w http.ResponseWriter, r *http.Request) {
         FROM claim
     `).Scan(&pending, &approved, &rejected)
 
-    if err != nil {
-        log.Println("Report claim query error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not retrieve claim statistics.",
-        })
-        return
-    }
+	if err != nil {
+		log.Println("Report claim query error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not retrieve claim statistics.",
+		})
+		return
+	}
 
-    var successRate float64
+	var successRate float64
 
-    decidedClaims := approved + rejected
-    if decidedClaims > 0 {
-        successRate = float64(approved) / float64(decidedClaims) * 100
-    }
+	decidedClaims := approved + rejected
+	if decidedClaims > 0 {
+		successRate = float64(approved) / float64(decidedClaims) * 100
+	}
 
-    rows, err := db.Query(`
+	rows, err := db.Query(`
         SELECT c.category_name, COUNT(i.item_id)
         FROM category c
         LEFT JOIN item i ON i.category_id = c.category_id
@@ -495,70 +492,70 @@ func reportsHandler(w http.ResponseWriter, r *http.Request) {
         ORDER BY c.category_name
     `)
 
-    if err != nil {
-        log.Println("Report category query error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not retrieve category statistics.",
-        })
-        return
-    }
-    defer rows.Close()
+	if err != nil {
+		log.Println("Report category query error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not retrieve category statistics.",
+		})
+		return
+	}
+	defer rows.Close()
 
-    type CategoryStat struct {
-        Category string `json:"category"`
-        Count    int    `json:"count"`
-    }
+	type CategoryStat struct {
+		Category string `json:"category"`
+		Count    int    `json:"count"`
+	}
 
-    categories := []CategoryStat{}
+	categories := []CategoryStat{}
 
-    for rows.Next() {
-        var category CategoryStat
+	for rows.Next() {
+		var category CategoryStat
 
-        if err := rows.Scan(&category.Category, &category.Count); err != nil {
-            log.Println("Category scan error:", err)
-            sendJSON(w, http.StatusInternalServerError, map[string]string{
-                "error": "Could not read category statistics.",
-            })
-            return
-        }
+		if err := rows.Scan(&category.Category, &category.Count); err != nil {
+			log.Println("Category scan error:", err)
+			sendJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "Could not read category statistics.",
+			})
+			return
+		}
 
-        categories = append(categories, category)
-    }
+		categories = append(categories, category)
+	}
 
-    if err := rows.Err(); err != nil {
-        log.Println("Category rows error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not read category statistics.",
-        })
-        return
-    }
+	if err := rows.Err(); err != nil {
+		log.Println("Category rows error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not read category statistics.",
+		})
+		return
+	}
 
-    sendJSON(w, http.StatusOK, map[string]interface{}{
-        "total":      total,
-        "claimed":    claimed,
-        "pending":    pending,
-        "rate":       successRate,
-        "categories": categories,
-    })
+	sendJSON(w, http.StatusOK, map[string]interface{}{
+		"total":      total,
+		"claimed":    claimed,
+		"pending":    pending,
+		"rate":       successRate,
+		"categories": categories,
+	})
 }
 
 func claimsHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
-        sendJSON(w, http.StatusMethodNotAllowed, map[string]string{
-            "error": "Method not allowed.",
-        })
-        return
-    }
+	if r.Method != http.MethodGet {
+		sendJSON(w, http.StatusMethodNotAllowed, map[string]string{
+			"error": "Method not allowed.",
+		})
+		return
+	}
 
-    _, authenticated := getSession(r)
-    if !authenticated {
-        sendJSON(w, http.StatusUnauthorized, map[string]string{
-            "error": "Please log in as staff first.",
-        })
-        return
-    }
+	_, authenticated := getSession(r)
+	if !authenticated {
+		sendJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "Please log in as staff first.",
+		})
+		return
+	}
 
-    rows, err := db.Query(`
+	rows, err := db.Query(`
         SELECT
             c.claim_id,
             i.description,
@@ -572,160 +569,160 @@ func claimsHandler(w http.ResponseWriter, r *http.Request) {
         ORDER BY c.claim_date DESC
     `)
 
-    if err != nil {
-        log.Println("Claim query error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not retrieve claims.",
-        })
-        return
-    }
-    defer rows.Close()
+	if err != nil {
+		log.Println("Claim query error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not retrieve claims.",
+		})
+		return
+	}
+	defer rows.Close()
 
-    claims := []Claim{}
+	claims := []Claim{}
 
-    for rows.Next() {
-        var claim Claim
-        var claimDate time.Time
+	for rows.Next() {
+		var claim Claim
+		var claimDate time.Time
 
-        err := rows.Scan(
-            &claim.ID,
-            &claim.Item,
-            &claim.Person,
-            &claim.Proof,
-            &claim.Status,
-            &claimDate,
-        )
+		err := rows.Scan(
+			&claim.ID,
+			&claim.Item,
+			&claim.Person,
+			&claim.Proof,
+			&claim.Status,
+			&claimDate,
+		)
 
-        if err != nil {
-            log.Println("Claim scan error:", err)
-            sendJSON(w, http.StatusInternalServerError, map[string]string{
-                "error": "Could not read claim information.",
-            })
-            return
-        }
+		if err != nil {
+			log.Println("Claim scan error:", err)
+			sendJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "Could not read claim information.",
+			})
+			return
+		}
 
-        claim.ClaimDate = claimDate.Format("2006-01-02")
-        claims = append(claims, claim)
-    }
+		claim.ClaimDate = claimDate.Format("2006-01-02")
+		claims = append(claims, claim)
+	}
 
-    if err := rows.Err(); err != nil {
-        log.Println("Claim rows error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not read claim information.",
-        })
-        return
-    }
+	if err := rows.Err(); err != nil {
+		log.Println("Claim rows error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not read claim information.",
+		})
+		return
+	}
 
-    sendJSON(w, http.StatusOK, claims)
+	sendJSON(w, http.StatusOK, claims)
 }
 func claimDecisionHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        sendJSON(w, http.StatusMethodNotAllowed, map[string]string{
-            "error": "Method not allowed.",
-        })
-        return
-    }
+	if r.Method != http.MethodPost {
+		sendJSON(w, http.StatusMethodNotAllowed, map[string]string{
+			"error": "Method not allowed.",
+		})
+		return
+	}
 
-    session, authenticated := getSession(r)
-    if !authenticated {
-        sendJSON(w, http.StatusUnauthorized, map[string]string{
-            "error": "Please log in as staff first.",
-        })
-        return
-    }
+	session, authenticated := getSession(r)
+	if !authenticated {
+		sendJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "Please log in as staff first.",
+		})
+		return
+	}
 
-    r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 
-    var input struct {
-        ClaimID  string `json:"claimId"`
-        Decision string `json:"decision"`
-        Notes    string `json:"notes"`
-    }
+	var input struct {
+		ClaimID  string `json:"claimId"`
+		Decision string `json:"decision"`
+		Notes    string `json:"notes"`
+	}
 
-    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-        sendJSON(w, http.StatusBadRequest, map[string]string{
-            "error": "Invalid claim information.",
-        })
-        return
-    }
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		sendJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Invalid claim information.",
+		})
+		return
+	}
 
-    input.ClaimID = strings.TrimSpace(input.ClaimID)
-    input.Decision = strings.TrimSpace(input.Decision)
-    input.Notes = strings.TrimSpace(input.Notes)
+	input.ClaimID = strings.TrimSpace(input.ClaimID)
+	input.Decision = strings.TrimSpace(input.Decision)
+	input.Notes = strings.TrimSpace(input.Notes)
 
-    if input.ClaimID == "" ||
-        (input.Decision != "Approved" && input.Decision != "Rejected") ||
-        input.Notes == "" ||
-        len([]rune(input.Notes)) > 255 {
-        sendJSON(w, http.StatusBadRequest, map[string]string{
-            "error": "Please provide a valid decision and verification notes.",
-        })
-        return
-    }
+	if input.ClaimID == "" ||
+		(input.Decision != "Approved" && input.Decision != "Rejected") ||
+		input.Notes == "" ||
+		len([]rune(input.Notes)) > 255 {
+		sendJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Please provide a valid decision and verification notes.",
+		})
+		return
+	}
 
-    tx, err := db.Begin()
-    if err != nil {
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not process the claim.",
-        })
-        return
-    }
-    defer tx.Rollback()
+	tx, err := db.Begin()
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not process the claim.",
+		})
+		return
+	}
+	defer tx.Rollback()
 
-    var itemID string
-    var currentStatus string
+	var itemID string
+	var currentStatus string
 
-    err = tx.QueryRow(`
+	err = tx.QueryRow(`
         SELECT item_id, claim_status
         FROM claim
         WHERE claim_id = ?
         FOR UPDATE
     `, input.ClaimID).Scan(&itemID, &currentStatus)
 
-    if err == sql.ErrNoRows {
-        sendJSON(w, http.StatusNotFound, map[string]string{
-            "error": "Claim not found.",
-        })
-        return
-    }
+	if err == sql.ErrNoRows {
+		sendJSON(w, http.StatusNotFound, map[string]string{
+			"error": "Claim not found.",
+		})
+		return
+	}
 
-    if err != nil {
-        log.Println("Claim lookup error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not find the claim.",
-        })
-        return
-    }
+	if err != nil {
+		log.Println("Claim lookup error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not find the claim.",
+		})
+		return
+	}
 	var claimantEmail, claimantName, itemDescription string
 
-err = tx.QueryRow(`
+	err = tx.QueryRow(`
     SELECT cl.claimant_email, cl.claimant_name, i.description
     FROM claim c
     JOIN claimant cl ON cl.claimant_id = c.claimant_id
     JOIN item i ON i.item_id = c.item_id
     WHERE c.claim_id = ?
 `, input.ClaimID).Scan(
-    &claimantEmail,
-    &claimantName,
-    &itemDescription,
-)
+		&claimantEmail,
+		&claimantName,
+		&itemDescription,
+	)
 
-if err != nil {
-    log.Println("Could not retrieve claimant email:", err)
-    sendJSON(w, http.StatusInternalServerError, map[string]string{
-        "error": "Could not retrieve claimant information.",
-    })
-    return
-}
+	if err != nil {
+		log.Println("Could not retrieve claimant email:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not retrieve claimant information.",
+		})
+		return
+	}
 
-    if currentStatus != "Pending" {
-        sendJSON(w, http.StatusConflict, map[string]string{
-            "error": "This claim has already been decided.",
-        })
-        return
-    }
+	if currentStatus != "Pending" {
+		sendJSON(w, http.StatusConflict, map[string]string{
+			"error": "This claim has already been decided.",
+		})
+		return
+	}
 
-    _, err = tx.Exec(`
+	_, err = tx.Exec(`
         UPDATE claim
         SET claim_status = ?,
             verified_by_staff_id = ?,
@@ -733,22 +730,22 @@ if err != nil {
         WHERE claim_id = ?
     `, input.Decision, session.ID, input.Notes, input.ClaimID)
 
-    if err != nil {
-        log.Println("Claim decision error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not save the claim decision.",
-        })
-        return
-    }
+	if err != nil {
+		log.Println("Claim decision error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not save the claim decision.",
+		})
+		return
+	}
 
-    if input.Decision == "Approved" {
-        _, err = tx.Exec(`
+	if input.Decision == "Approved" {
+		_, err = tx.Exec(`
             UPDATE item
             SET status = 'Claimed'
             WHERE item_id = ?
         `, itemID)
-    } else {
-        _, err = tx.Exec(`
+	} else {
+		_, err = tx.Exec(`
             UPDATE item
             SET status = 'Unclaimed'
             WHERE item_id = ?
@@ -759,141 +756,143 @@ if err != nil {
                     AND claim_status = 'Pending'
               )
         `, itemID, itemID)
-    }
+	}
 
-    if err != nil {
-        log.Println("Item status update error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not update the item status.",
-        })
-        return
-    }
+	if err != nil {
+		log.Println("Item status update error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not update the item status.",
+		})
+		return
+	}
 
-    if err := tx.Commit(); err != nil {
-        log.Println("Claim transaction error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not complete the claim decision.",
-        })
-        return
-    }
+	if err := tx.Commit(); err != nil {
+		log.Println("Claim transaction error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not complete the claim decision.",
+		})
+		return
+	}
 	if err := sendClaimDecisionEmail(
-    claimantEmail,
-    claimantName,
-    itemDescription,
-    input.Decision,
-    input.Notes,
-); err != nil {
-    log.Println("Claim decision saved, but email notification failed:", err)
-}
+		claimantEmail,
+		claimantName,
+		itemDescription,
+		input.Decision,
+		input.Notes,
+	); err != nil {
+		log.Println("Claim decision saved, but email notification failed:", err)
+	}
 
-    sendJSON(w, http.StatusOK, map[string]string{
-        "message": "Claim decision saved successfully.",
-    })
+	sendJSON(w, http.StatusOK, map[string]string{
+		"message": "Claim decision saved successfully.",
+	})
 }
 
 func createClaimHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        sendJSON(w, http.StatusMethodNotAllowed, map[string]string{
-            "error": "Method not allowed.",
-        })
-        return
-    }
+	if r.Method != http.MethodPost {
+		sendJSON(w, http.StatusMethodNotAllowed, map[string]string{
+			"error": "Method not allowed.",
+		})
+		return
+	}
 
-    r.Body = http.MaxBytesReader(w, r.Body, 8192)
+	r.Body = http.MaxBytesReader(w, r.Body, 8192)
 
-    var input struct {
-        ItemID   string `json:"itemId"`
-        Name     string `json:"name"`
-        Type     string `json:"type"`
-        UBID     string `json:"ubId"`
-        Contact  string `json:"contact"`
-        Proof    string `json:"proof"`
-    }
+	var input struct {
+		ItemID  string `json:"itemId"`
+		Name    string `json:"name"`
+		Type    string `json:"type"`
+		UBID    string `json:"ubId"`
+		Contact string `json:"contact"`
+		Email   string `json:"email"`
+		Proof   string `json:"proof"`
+	}
 
-    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-        sendJSON(w, http.StatusBadRequest, map[string]string{
-            "error": "Invalid claim information.",
-        })
-        return
-    }
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		sendJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Invalid claim information.",
+		})
+		return
+	}
 
-    input.ItemID = strings.TrimSpace(input.ItemID)
-    input.Name = strings.TrimSpace(input.Name)
-    input.Type = strings.TrimSpace(input.Type)
-    input.UBID = strings.TrimSpace(input.UBID)
-    input.Contact = strings.TrimSpace(input.Contact)
-    input.Proof = strings.TrimSpace(input.Proof)
+	input.ItemID = strings.TrimSpace(input.ItemID)
+	input.Name = strings.TrimSpace(input.Name)
+	input.Type = strings.TrimSpace(input.Type)
+	input.UBID = strings.TrimSpace(input.UBID)
+	input.Contact = strings.TrimSpace(input.Contact)
+	input.Proof = strings.TrimSpace(input.Proof)
+	input.Email = strings.TrimSpace(input.Email)
 
-    if input.ItemID == "" ||
-        input.Name == "" || len([]rune(input.Name)) > 100 ||
-        (input.Type != "Student" && input.Type != "Faculty" && input.Type != "Staff") ||
-        len(input.UBID) > 10 ||
-        input.Contact == "" || len([]rune(input.Contact)) > 100 ||
+	if input.ItemID == "" ||
+		input.Name == "" || len([]rune(input.Name)) > 100 ||
+		(input.Type != "Student" && input.Type != "Faculty" && input.Type != "Staff") ||
+		len(input.UBID) > 10 ||
+		input.Contact == "" || len([]rune(input.Contact)) > 100 ||
 		input.Email == "" || len([]rune(input.Email)) > 100 ||
-        input.Proof == "" || len([]rune(input.Proof)) > 500 {
+		input.Proof == "" || len([]rune(input.Proof)) > 500 {
 
-        sendJSON(w, http.StatusBadRequest, map[string]string{
-            "error": "Please complete all required fields correctly.",
-        })
-        return
-    }
+		sendJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Please complete all required fields correctly.",
+		})
+		return
+	}
 
-    tx, err := db.Begin()
-    if err != nil {
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not submit your claim.",
-        })
-        return
-    }
-    defer tx.Rollback()
+	tx, err := db.Begin()
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not submit your claim.",
+		})
+		return
+	}
+	defer tx.Rollback()
 
-    var itemStatus string
+	var itemStatus string
 
-    err = tx.QueryRow(`
+	err = tx.QueryRow(`
         SELECT status
         FROM item
         WHERE item_id = ?
         FOR UPDATE
     `, input.ItemID).Scan(&itemStatus)
 
-    if err == sql.ErrNoRows {
-        sendJSON(w, http.StatusNotFound, map[string]string{
-            "error": "The selected item could not be found.",
-        })
-        return
-    }
+	if err == sql.ErrNoRows {
+		sendJSON(w, http.StatusNotFound, map[string]string{
+			"error": "The selected item could not be found.",
+		})
+		return
+	}
 
-    if err != nil {
-        log.Println("Claim item lookup error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not find the selected item.",
-        })
-        return
-    }
+	if err != nil {
+		log.Println("Claim item lookup error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not find the selected item.",
+		})
+		return
+	}
 
-    if itemStatus == "Claimed" {
-        sendJSON(w, http.StatusConflict, map[string]string{
-            "error": "This item has already been claimed.",
-        })
-        return
-    }
+	if itemStatus == "Claimed" {
+		sendJSON(w, http.StatusConflict, map[string]string{
+			"error": "This item has already been claimed.",
+		})
+		return
+	}
 
-    var claimantID string
+	var claimantID string
 
-    err = tx.QueryRow("SELECT UUID()").Scan(&claimantID)
-    if err != nil {
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not create your claim.",
-        })
-        return
-    }
+	err = tx.QueryRow("SELECT UUID()").Scan(&claimantID)
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not create your claim.",
+		})
+		return
+	}
 
-    var ubID interface{}
-    if input.UBID != "" {
-        ubID = input.UBID
-    }
+	var ubID interface{}
+	if input.UBID != "" {
+		ubID = input.UBID
+	}
 
-  _, err = tx.Exec(`
+	_, err = tx.Exec(`
     INSERT INTO claimant (
         claimant_id,
         claimant_name,
@@ -905,15 +904,15 @@ func createClaimHandler(w http.ResponseWriter, r *http.Request) {
     VALUES (?, ?, ?, ?, ?, ?)
 `, claimantID, input.Name, input.Email, input.Type, ubID, input.Contact)
 
-    if err != nil {
-        log.Println("Claimant insert error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not save claimant information.",
-        })
-        return
-    }
+	if err != nil {
+		log.Println("Claimant insert error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not save claimant information.",
+		})
+		return
+	}
 
-    _, err = tx.Exec(`
+	_, err = tx.Exec(`
         INSERT INTO claim (
             item_id,
             claimant_id,
@@ -923,164 +922,161 @@ func createClaimHandler(w http.ResponseWriter, r *http.Request) {
         VALUES (?, ?, 'Pending', ?)
     `, input.ItemID, claimantID, input.Proof)
 
-    if err != nil {
-        log.Println("Claim insert error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not save your claim.",
-        })
-        return
-    }
+	if err != nil {
+		log.Println("Claim insert error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not save your claim.",
+		})
+		return
+	}
 
-    if itemStatus == "Unclaimed" {
-        _, err = tx.Exec(`
+	if itemStatus == "Unclaimed" {
+		_, err = tx.Exec(`
             UPDATE item
             SET status = 'Pending Verification'
             WHERE item_id = ?
         `, input.ItemID)
 
-        if err != nil {
-            log.Println("Item status update error:", err)
-            sendJSON(w, http.StatusInternalServerError, map[string]string{
-                "error": "Could not update the item status.",
-            })
-            return
-        }
-    }
+		if err != nil {
+			log.Println("Item status update error:", err)
+			sendJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "Could not update the item status.",
+			})
+			return
+		}
+	}
 
-    if err := tx.Commit(); err != nil {
-        log.Println("Claim transaction error:", err)
-        sendJSON(w, http.StatusInternalServerError, map[string]string{
-            "error": "Could not complete your claim submission.",
-        })
-        return
-    }
+	if err := tx.Commit(); err != nil {
+		log.Println("Claim transaction error:", err)
+		sendJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "Could not complete your claim submission.",
+		})
+		return
+	}
 
-    sendJSON(w, http.StatusCreated, map[string]string{
-        "message": "Your claim has been submitted successfully and is pending staff verification.",
-    })
+	sendJSON(w, http.StatusCreated, map[string]string{
+		"message": "Your claim has been submitted successfully and is pending staff verification.",
+	})
 }
 func sendClaimDecisionEmail(
-    recipient string,
-    claimantName string,
-    itemDescription string,
-    decision string,
-    notes string,
+	recipient string,
+	claimantName string,
+	itemDescription string,
+	decision string,
+	notes string,
 ) error {
-    host := os.Getenv("SMTP_HOST")
-    port := os.Getenv("SMTP_PORT")
-    username := os.Getenv("SMTP_USERNAME")
-    password := os.Getenv("SMTP_PASSWORD")
+	host := os.Getenv("SMTP_HOST")
+	port := os.Getenv("SMTP_PORT")
+	username := os.Getenv("SMTP_USERNAME")
+	password := os.Getenv("SMTP_PASSWORD")
 
-    if host == "" || port == "" ||
-        username == "" || password == "" {
-        return fmt.Errorf("SMTP configuration is incomplete")
-    }
+	if host == "" || port == "" ||
+		username == "" || password == "" {
+		return fmt.Errorf("SMTP configuration is incomplete")
+	}
 
-    subject := "UB Lost & Found Claim Update"
+	subject := "UB Lost & Found Claim Update"
 
-    messageBody := fmt.Sprintf(
-        "Hello %s,\n\n"+
-            "Your claim for '%s' has been %s.\n\n"+
-            "Staff verification notes: %s\n\n"+
-            "Thank you,\nUniversity of Belize Lost & Found",
-        claimantName,
-        itemDescription,
-        decision,
-        notes,
-    )
+	messageBody := fmt.Sprintf(
+		"Hello %s,\n\n"+
+			"Your claim for '%s' has been %s.\n\n"+
+			"Staff verification notes: %s\n\n"+
+			"Thank you,\nUniversity of Belize Lost & Found",
+		claimantName,
+		itemDescription,
+		decision,
+		notes,
+	)
 
-    message := []byte(
-        "From: " + username + "\r\n" +
-            "To: " + recipient + "\r\n" +
-            "Subject: " + subject + "\r\n" +
-            "MIME-Version: 1.0\r\n" +
-            "Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
-            messageBody,
-    )
+	message := []byte(
+		"From: " + username + "\r\n" +
+			"To: " + recipient + "\r\n" +
+			"Subject: " + subject + "\r\n" +
+			"MIME-Version: 1.0\r\n" +
+			"Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
+			messageBody,
+	)
 
-    auth := smtp.PlainAuth(
-        "",
-        username,
-        password,
-        host,
-    )
+	auth := smtp.PlainAuth(
+		"",
+		username,
+		password,
+		host,
+	)
 
-    return smtp.SendMail(
-        host+":"+port,
-        auth,
-        username,
-        []string{recipient},
-        message,
-    )
+	return smtp.SendMail(
+		host+":"+port,
+		auth,
+		username,
+		[]string{recipient},
+		message,
+	)
 }
 
-	
 func main() {
-    dbHost := os.Getenv("DB_HOST")
-    dbPort := os.Getenv("DB_PORT")
-    dbName := os.Getenv("DB_NAME")
-    dbUser := os.Getenv("DB_USER")
-    dbPassword := os.Getenv("DB_PASSWORD")
+	dbHost := os.Getenv("DB_HOST")
+	dbPort := os.Getenv("DB_PORT")
+	dbName := os.Getenv("DB_NAME")
+	dbUser := os.Getenv("DB_USER")
+	dbPassword := os.Getenv("DB_PASSWORD")
 
-    if dbHost == "" || dbUser == "" || dbPassword == "" {
-        log.Fatal("Please set DB_HOST, DB_USER and DB_PASSWORD.")
-    }
+	if dbHost == "" || dbUser == "" || dbPassword == "" {
+		log.Fatal("Please set DB_HOST, DB_USER and DB_PASSWORD.")
+	}
 
-    if dbPort == "" {
-        dbPort = "4000"
-    }
+	if dbPort == "" {
+		dbPort = "4000"
+	}
 
-    if dbName == "" {
-        dbName = "ub_lost_found"
-    }
+	if dbName == "" {
+		dbName = "ub_lost_found"
+	}
 
-    dsn := fmt.Sprintf(
-        "%s:%s@tcp(%s:%s)/%s?parseTime=true&tls=true",
-        dbUser,
-        dbPassword,
-        dbHost,
-        dbPort,
-        dbName,
-    )
+	dsn := fmt.Sprintf(
+		"%s:%s@tcp(%s:%s)/%s?parseTime=true&tls=true",
+		dbUser,
+		dbPassword,
+		dbHost,
+		dbPort,
+		dbName,
+	)
 
-    var err error
+	var err error
 
-    db, err = sql.Open("mysql", dsn)
-    if err != nil {
-        log.Fatal("Could not open database:", err)
-    }
+	db, err = sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal("Could not open database:", err)
+	}
 
-    if err := db.Ping(); err != nil {
-        log.Fatal("Could not connect to MySQL:", err)
-    }
+	if err := db.Ping(); err != nil {
+		log.Fatal("Could not connect to MySQL:", err)
+	}
 
-    log.Println("Connected to the UB Lost and Found database!")
+	log.Println("Connected to the UB Lost and Found database!")
 
-
-	
 	http.HandleFunc("/api/login", loginHandler)
 	http.HandleFunc("/api/me", meHandler)
 	http.HandleFunc("/api/logout", logoutHandler)
 	http.HandleFunc("/api/claims", claimsHandler)
-http.HandleFunc("/api/claims/decision", claimDecisionHandler)
-http.HandleFunc("/api/claims/submit", createClaimHandler)
-http.HandleFunc("/api/reports", reportsHandler)
+	http.HandleFunc("/api/claims/decision", claimDecisionHandler)
+	http.HandleFunc("/api/claims/submit", createClaimHandler)
+	http.HandleFunc("/api/reports", reportsHandler)
 	http.HandleFunc("/api/items", func(w http.ResponseWriter, r *http.Request) {
-    if r.Method == http.MethodPost {
-        createItemHandler(w, r)
-        return
-    }
+		if r.Method == http.MethodPost {
+			createItemHandler(w, r)
+			return
+		}
 
-    itemsHandler(w, r)
-})
+		itemsHandler(w, r)
+	})
 
 	http.Handle("/", http.FileServer(http.Dir("public")))
 
-port := os.Getenv("PORT")
-if port == "" {
-    port = "8080"
-}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-log.Println("Website running on port " + port)
-log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Println("Website running on port " + port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
