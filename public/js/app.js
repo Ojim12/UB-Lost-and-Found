@@ -570,14 +570,15 @@ if (publicClaimForm) {
 
         const message = document.getElementById("claimMessage");
 
-        const claimData = {
-            itemId: document.getElementById("claimItem").value,
-            name: document.getElementById("claimName").value.trim(),
-            type: document.getElementById("claimType").value,
-            ubId: document.getElementById("claimID").value.trim(),
-            contact: document.getElementById("claimContact").value.trim(),
-            proof: document.getElementById("claimProof").value.trim()
-        };
+      const claimData = {
+    itemId: document.getElementById("claimItem").value,
+    name: document.getElementById("claimName").value.trim(),
+    type: document.getElementById("claimType").value,
+    ubId: document.getElementById("claimID").value.trim(),
+    contact: document.getElementById("claimContact").value.trim(),
+    email: document.getElementById("claimEmail").value.trim(),
+    proof: document.getElementById("claimProof").value.trim()
+};
 
         message.textContent = "Submitting claim...";
 
