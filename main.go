@@ -693,19 +693,6 @@ func claimDecisionHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	var claimantEmail, claimantName, itemDescription string
-
-	err = tx.QueryRow(`
-    SELECT cl.claimant_email, cl.claimant_name, i.description
-    FROM claim c
-    JOIN claimant cl ON cl.claimant_id = c.claimant_id
-    JOIN item i ON i.item_id = c.item_id
-    WHERE c.claim_id = ?
-`, input.ClaimID).Scan(
-		&claimantEmail,
-		&claimantName,
-		&itemDescription,
-	)
 
 	if err != nil {
 		log.Println("Could not retrieve claimant email:", err)
@@ -721,6 +708,19 @@ func claimDecisionHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	var claimantEmail, claimantName, itemDescription string
+
+	err = tx.QueryRow(`
+    SELECT cl.claimant_email, cl.claimant_name, i.description
+    FROM claim c
+    JOIN claimant cl ON cl.claimant_id = c.claimant_id
+    JOIN item i ON i.item_id = c.item_id
+    WHERE c.claim_id = ?
+`, input.ClaimID).Scan(
+		&claimantEmail,
+		&claimantName,
+		&itemDescription,
+	)
 
 	_, err = tx.Exec(`
         UPDATE claim
@@ -970,6 +970,11 @@ func sendClaimDecisionEmail(
 	username := os.Getenv("SMTP_USERNAME")
 	password := os.Getenv("SMTP_PASSWORD")
 
+	from := os.Getenv("SMTP_FROM")
+	if from == "" {
+		from = username
+	}
+
 	if host == "" || port == "" ||
 		username == "" || password == "" {
 		return fmt.Errorf("SMTP configuration is incomplete")
@@ -989,7 +994,7 @@ func sendClaimDecisionEmail(
 	)
 
 	message := []byte(
-		"From: " + username + "\r\n" +
+		"From: " + from + "\r\n" +
 			"To: " + recipient + "\r\n" +
 			"Subject: " + subject + "\r\n" +
 			"MIME-Version: 1.0\r\n" +
@@ -1007,7 +1012,7 @@ func sendClaimDecisionEmail(
 	return smtp.SendMail(
 		host+":"+port,
 		auth,
-		username,
+		from,
 		[]string{recipient},
 		message,
 	)
